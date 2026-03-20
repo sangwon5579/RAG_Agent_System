@@ -157,4 +157,15 @@ class RagRuntime:
         train_rows = load_train_rows(Path("data/train.csv"))
         self._index_rows = train_rows
         self._index_matrix = None
-        
+
+    # fallback
+    def _fallback_predict(self, query: ParsedQuery) -> str:
+        if not self._index_rows:
+            return "A"
+        votes = [0, 0, 0, 0]
+        q_tokens = set(query.question.lower().split())
+        for row in self._index_rows[:160]:
+            overlap = len(q_tokens.intersection(set(row.question.lower().split())))
+            votes[LETTER_TO_IDX[row.answer]] += overlap
+        best_idx = int(np.argmax(np.asarray(votes, dtype=np.int64)))
+        return IDX_TO_LETTER[best_idx]

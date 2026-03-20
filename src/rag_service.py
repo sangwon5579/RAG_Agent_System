@@ -118,3 +118,43 @@ class OpenAIEmbedder:
             model=self._model,
             input=[text]
             return np.asarray(response.data[0].embedding, dtype=np.float32)
+
+# 인덱스 로딩 + retrieval + LLM 선택 + 폴백
+class RagRuntime:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = Settings
+        self._client = OpenAI | None = None
+        if settings.openai_api_key:
+            self._client = OpenAI(
+                api_key=settings.openai_api_key,
+                timeout=settings.openai_timeout_seconds
+            )
+            self._client = OpenAI(
+                api_key=settings.openai_api_key,
+                timeout=settings.openai_timeout_seconds
+            )
+            self._index_rows: list[TrainRow] = []
+            self._index_matrix: np.ndarray | None = None
+    
+    def load_index(self) -> None:
+        index_dir = Path(self.settings.index_dir)
+        matrix_path = index_dir / "embeddings.npy"
+        rows_path = index_dir / "rows.json"
+
+        if not matrix_path.exists() or not rows_path.exists():
+            self._index_matrix = np.load(matrix_path)
+            raw_rows = json.loads(rows_path.read_text(encoding="utf-8"))
+                        self._index_rows = [
+                TrainRow(
+                    question=row["question"],
+                    options=row["options"],
+                    answer=row["answer"],
+                    category=row["category"],
+                )
+                for row in raw_rows
+            ]
+            return 
+        train_rows = load_train_rows(Path("data/train.csv"))
+        self._index_rows = train_rows
+        self._index_matrix = None
+        

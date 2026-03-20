@@ -1,10 +1,13 @@
-from __future__ import annotations
 from typing import Literal
 from pydantic import BaseModel, Field
 
 class AgentRequest(BaseModel):
-    query: str
-
-# A,B,C,D 강제
+    query: str = Field(
+    ...,
+    description="The multiple-choice legal question to be analyzed and answered",
+)
+    
 class AgentResponse(BaseModel):
-    answer: Literal["A", "B", "C", "D"]
+    answer: Literal["A", "B", "C", "D"] = Field(
+    ..., description="The letter of the correct option"
+)

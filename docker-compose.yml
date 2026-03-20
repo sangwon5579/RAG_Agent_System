@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  rag-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-agent-system
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_TIMEOUT_SECONDS=8
+    volumes:
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped

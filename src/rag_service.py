@@ -37,3 +37,58 @@ class TrainRow:
     answer: str
     category: str
 
+    # 한 문제를 검색용 텍스트로 변환
+    def retrieval_text(self) -> str:
+        return "\n".join(
+            [
+                f"Question: {self.question}",
+                f"A: {self.options.get('A', '')}",
+                f"B: {self.options.get('B', '')}", 
+                f"C: {self.options.get('C', '')}",
+                f"D: {self.options.get('D', '')}"
+                f"Category: {self.category}",
+                f"Correct: {self.answer}"
+            ]
+        )
+    
+
+def parse_query(raw: str) -> ParsedQuery:
+    options: dict[str, str] = {}
+
+    for match in OPTION_PATTERN.finditer(raw):
+        options[match.group(1)] = match.group(2).strip()
+
+    question_lines: list[str] = []
+    for line in raw.splitlines():
+        if OPTION_PATTERN.match(line):
+            continue
+        if line.strip():
+            question_lines.append(line.strip())
+            
+    question = " ".join(question_lines).strip
+    return ParsedQuery(question=question, options=options) # type: ignore
+
+
+# csv 읽어서 TrainRow 객체 리스트로 변환
+def load_train_rows(train_path: Path) -> list[TrainRow]:
+    rows: list[TrainRow] = []
+    with train_path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            answer_raw = str(row.get("answer", "1")).strip()
+            answer_num = min(max(int(answer_raw), 1), 4)
+            answer = IDX_TO_LETTER[answer_num - 1]
+            rows.append(
+                TrainRow(
+                    question=str(row.get("question", "")).strip(),
+                    options={
+                        "A": str(row.get("A", "")).strip(),
+                        "B": str(row.get("B", "")).strip(),
+                        "C": str(row.get("C", "")).strip(),
+                        "D": str(row.get("D", "")).strip(),
+                    },
+                    answer=answer,
+                    category=str(row.get("Category", "")).strip(),
+                )
+            )
+    return rows

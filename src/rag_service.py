@@ -92,3 +92,29 @@ def load_train_rows(train_path: Path) -> list[TrainRow]:
                 )
             )
     return rows
+
+class OpenAIEmbedder:
+    def __init__(self, settings: Settings) -> None:
+        if not settings.openai_api_key:
+                raise ValueError("OpenAI API key is required for embedding")
+        self.client = OpenAI(
+            api_key=settings.openai_api_key,
+            timemout=settings.openai_timeout_seconds
+        )
+        self._model = settings.embedding_model
+    def embed_texts(self, texts: list[str], batch_size: int=64) -> np.ndarray:
+        # 각 텍스트 임베딩 벡터 담을 리스트
+        vectors: list[list[float]] = []
+        
+        for start in range(0, len(texts), batch_size):
+            batch = texts[start:start+batch_size]
+            response = self.client.embeddings.create(
+                input=batch,
+                model=self._model
+            )
+            return np.asarray(vectors, dtype=np.float32)
+    def embed_text(self, text: str) -> np.ndarray:
+        response = self._client.embeddings.create(
+            model=self._model,
+            input=[text]
+            return np.asarray(response.data[0].embedding, dtype=np.float32)

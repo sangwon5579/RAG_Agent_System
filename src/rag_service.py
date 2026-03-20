@@ -169,3 +169,144 @@ class RagRuntime:
             votes[LETTER_TO_IDX[row.answer]] += overlap
         best_idx = int(np.argmax(np.asarray(votes, dtype=np.int64)))
         return IDX_TO_LETTER[best_idx]
+
+    # 질문 임베딩과 가장 비슷한 트레이닝 문제 top k
+    def _retrieve(self, query_embedding: np.ndarray, top_k: int) -> list[TrainRow]:
+        assert self._index_matrix is not None
+        matrix = self._index_matrix
+        q = query_embedding / (np.linalg.norm(query_embedding) + 1e-12)
+        m = matrix / (np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-12)
+        #코사인 유사도
+        scores = m @ q
+        top_indices = np.argsort(scores)[-top_k:][::-1]
+        return [self._index_rows[int(i)] for i in top_indices]
+
+    # 점수까지
+    def _retrieve_with_scores(
+        self, query_embedding: np.ndarray, top_k: int
+    ) -> tuple[list[TrainRow], list[float]]:
+        assert self._index_matrix is not None
+        matrix = self._index_matrix
+        q = query_embedding / (np.linalg.norm(query_embedding) + 1e-12)
+        m = matrix / (np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-12)
+        scores = m @ q
+        top_indices = np.argsort(scores)[-top_k:][::-1]
+        rows = [self._index_rows[int(i)] for i in top_indices]
+        sims = [float(scores[int(i)]) for i in top_indices]
+        return rows, sims
+
+    # LLM에 예시 문제들과 새 문제 같이 넣어서 고르게 함
+    def _llm_choose(self, parsed: ParsedQuery, retrieved: list[TrainRow]) -> str:
+        assert self._client is not None
+
+        if retrieved:
+            context_parts: list[str] = []
+            for i, row in enumerate(retrieved, start=1):
+                context_parts.append(
+                    f"[예시 {i}]\n"
+                    f"문제: {row.question}\n"
+                    f"A: {row.options['A']}\n"
+                    f"B: {row.options['B']}\n"
+                    f"C: {row.options['C']}\n"
+                    f"D: {row.options['D']}\n"
+                    f"정답: {row.answer}"
+                )
+            context_block = (
+                "아래는 유사한 한국 법률 문제 예시입니다:\n\n"
+                + "\n\n".join(context_parts)
+                + "\n\n===\n\n"
+            )
+        else:
+            context_block = ""
+
+        # 최종 유저 프롬프트
+        prompt = (
+            f"{context_block}"
+            f"다음 문제의 정답을 선택하세요.\n\n"
+            f"문제: {parsed.question}\n"
+            f"A: {parsed.options.get('A', '')}\n"
+            f"B: {parsed.options.get('B', '')}\n"
+            f"C: {parsed.options.get('C', '')}\n"
+            f"D: {parsed.options.get('D', '')}\n\n"
+            f"정답:"
+        )
+
+        response = self._client.chat.completions.create(
+            model=self.settings.llm_model,
+            # 랜덤성 제거
+            temperature=0.0,
+            # 최대 1토큰
+            max_tokens=1,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "한국 형사법 및 법률 전문가. A, B, C, D 중 정답 알파벳 하나만 출력.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+        )
+        raw = (response.choices[0].message.content or "").strip().upper()
+        if raw and raw[0] in ("A", "B", "C", "D"):
+            return raw[0]
+        for letter in ("A", "B", "C", "D"):
+            if letter in raw:
+                return letter
+        return "A"
+
+
+    #실행 함수
+    # 질문, 선택지, 카테고리 받아서 최종 정답 반환
+    def infer_mcq(
+        self, question: str, options: dict[str, str], category: str = ""
+    ) -> str:
+        """Infer MCQ answer given question and options dict."""
+        parsed = ParsedQuery(question=question, options=options)
+
+        if set(parsed.options.keys()) != {"A", "B", "C", "D"}:
+            return self._fallback_predict(parsed)
+
+        if self._client is None:
+            return self._fallback_predict(parsed)
+
+        query_text = "\n".join(
+            [
+                f"Question: {parsed.question}",
+                f"A: {parsed.options['A']}",
+                f"B: {parsed.options['B']}",
+                f"C: {parsed.options['C']}",
+                f"D: {parsed.options['D']}",
+            ]
+        )
+        if category:
+            query_text += f"\nCategory: {category}"
+
+        query_embedding = np.asarray(
+            self._client.embeddings.create(
+                model=self.settings.embedding_model,
+                input=[query_text],
+            )
+            .data[0]
+            .embedding,
+            dtype=np.float32,
+        )
+
+        # 유사도 임계값 이상인 경우에만 컨텍스트 포함 (selective RAG)
+        if self._index_matrix is not None and self._index_rows:
+            retrieved_rows, sims = self._retrieve_with_scores(
+                query_embedding, self.settings.top_k
+            )
+            threshold = self.settings.retrieval_sim_threshold
+            high_quality = [
+                row
+                for row, s in zip(retrieved_rows, sims, strict=False)
+                if s >= threshold
+            ]
+        else:
+            high_quality = []
+
+        return self._llm_choose(parsed, high_quality[:3])
+
+    def infer(self, query: str) -> str:
+        """Backward compat: infer from formatted query string."""
+        parsed = parse_query(query)
+        return self.infer_mcq(parsed.question, parsed.options)

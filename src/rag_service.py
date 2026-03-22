@@ -338,7 +338,10 @@ class RAGRuntime:
         margin = top_score - second_score
 
         # 검색 신뢰도가 충분히 높을 때만 KNN이 LLM 답을 덮어쓴다.
-        if top1_sim >= 0.86 and margin >= 0.08:
+        if (
+            top1_sim >= self.settings.hybrid_override_top1_sim
+            and margin >= self.settings.hybrid_override_margin
+        ):
             return knn_answer
 
         return llm_answer

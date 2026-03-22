@@ -21,33 +21,55 @@ KMMLU 형사법 객관식 QA를 위한 RAG 기반 에이전트
 
 ## 초기 구축 방법
 
-`.env` 파일에 `OPENAI_API_KEY=...`를 적어두면 추가 환경변수 설정 없이 바로 실행할 수 있습니다.
+`.env` 파일에 `OPENAI_API_KEY=...`를 설정합니다.
+
+### 로컬 실행 (권장)
+
+#### Linux/macOS
 
 ```bash
 make setup
+make run
 ```
 
-`.env`를 사용하지 않는 경우에는 현재 셸에 환경변수를 설정한 뒤 실행합니다.
+#### Windows PowerShell
 
-```bash
-# Linux/macOS
-export OPENAI_API_KEY=sk-...
-make setup        # uv sync + 벡터 인덱스 생성
+Windows에서는 `make` 대신 `mingw32-make`를 사용합니다.
 
-# Windows PowerShell
-$env:OPENAI_API_KEY="sk-..."
+```powershell
+mingw32-make setup
+mingw32-make run
+```
+
+만약 `mingw32-make`가 없다면 아래 명령으로 동일하게 실행할 수 있습니다.
+
+```powershell
 uv sync
 uv run python scripts/build_rag_index.py
+uv run uvicorn src.server:app --host 0.0.0.0 --port 8000
 ```
 
-`make setup`은 의존성 설치(`uv sync`)와 `train.csv` 기반 벡터 인덱스 생성을 순서대로 실행합니다.
+`setup`은 의존성 설치(`uv sync`)와 `train.csv` 기반 벡터 인덱스 생성을 순서대로 수행합니다.
 
-## Inference 서버 실행
+### API 확인
 
-```bash
-make run
-# 또는
-docker-compose up --build
+서버 실행 후 아래를 확인합니다.
+
+- Health: `GET /health`
+- Inference: `POST /inference`
+
+스모크 테스트:
+
+```powershell
+uv run python scripts/smoke_inference.py
 ```
 
 기본 주소: `http://127.0.0.1:8000`
+
+## Docker 실행
+
+`.env` 파일에 `OPENAI_API_KEY=...`를 설정한 뒤 실행합니다.
+
+```bash
+docker compose up --build
+```

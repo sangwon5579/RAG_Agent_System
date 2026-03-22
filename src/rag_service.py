@@ -1,11 +1,14 @@
 from __future__ import annotations
+
 import csv
 import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
 import numpy as np
 from openai import OpenAI
+
 from src.settings import Settings
 
 # 문제/학습 데이터를 담는 자료구조
@@ -43,11 +46,11 @@ class TrainRow:
             [
                 f"Question: {self.question}",
                 f"A: {self.options.get('A', '')}",
-                f"B: {self.options.get('B', '')}", 
+                f"B: {self.options.get('B', '')}",
                 f"C: {self.options.get('C', '')}",
-                f"D: {self.options.get('D', '')}"
+                f"D: {self.options.get('D', '')}",
                 f"Category: {self.category}",
-                f"Correct: {self.answer}"
+                f"Correct: {self.answer}",
             ]
         )
     
@@ -65,8 +68,8 @@ def parse_query(raw: str) -> ParsedQuery:
         if line.strip():
             question_lines.append(line.strip())
             
-    question = " ".join(question_lines).strip
-    return ParsedQuery(question=question, options=options) # type: ignore
+    question = " ".join(question_lines).strip()
+    return ParsedQuery(question=question, options=options)
 
 
 # csv 읽어서 TrainRow 객체 리스트로 변환
@@ -96,55 +99,58 @@ def load_train_rows(train_path: Path) -> list[TrainRow]:
 class OpenAIEmbedder:
     def __init__(self, settings: Settings) -> None:
         if not settings.openai_api_key:
-                raise ValueError("OpenAI API key is required for embedding")
+            raise ValueError("OpenAI API key is required for embedding")
+
         self.client = OpenAI(
             api_key=settings.openai_api_key,
-            timemout=settings.openai_timeout_seconds
+            timeout=settings.openai_timeout_seconds,
         )
         self._model = settings.embedding_model
-    def embed_texts(self, texts: list[str], batch_size: int=64) -> np.ndarray:
+
+    def embed_texts(self, texts: list[str], batch_size: int = 64) -> np.ndarray:
         # 각 텍스트 임베딩 벡터 담을 리스트
         vectors: list[list[float]] = []
-        
+
         for start in range(0, len(texts), batch_size):
-            batch = texts[start:start+batch_size]
+            batch = texts[start : start + batch_size]
             response = self.client.embeddings.create(
                 input=batch,
-                model=self._model
+                model=self._model,
             )
-            return np.asarray(vectors, dtype=np.float32)
+            vectors.extend(item.embedding for item in response.data)
+
+        return np.asarray(vectors, dtype=np.float32)
+
     def embed_text(self, text: str) -> np.ndarray:
-        response = self._client.embeddings.create(
+        response = self.client.embeddings.create(
             model=self._model,
-            input=[text]
-            return np.asarray(response.data[0].embedding, dtype=np.float32)
+            input=[text],
+        )
+        return np.asarray(response.data[0].embedding, dtype=np.float32)
 
 # 인덱스 로딩 + retrieval + LLM 선택 + 폴백
-class RagRuntime:
+class RAGRuntime:
     def __init__(self, settings: Settings) -> None:
-        self.settings = Settings
-        self._client = OpenAI | None = None
+        self.settings = settings
+        self._client: OpenAI | None = None
         if settings.openai_api_key:
             self._client = OpenAI(
                 api_key=settings.openai_api_key,
-                timeout=settings.openai_timeout_seconds
+                timeout=settings.openai_timeout_seconds,
             )
-            self._client = OpenAI(
-                api_key=settings.openai_api_key,
-                timeout=settings.openai_timeout_seconds
-            )
-            self._index_rows: list[TrainRow] = []
-            self._index_matrix: np.ndarray | None = None
+
+        self._index_rows: list[TrainRow] = []
+        self._index_matrix: np.ndarray | None = None
     
     def load_index(self) -> None:
         index_dir = Path(self.settings.index_dir)
         matrix_path = index_dir / "embeddings.npy"
         rows_path = index_dir / "rows.json"
 
-        if not matrix_path.exists() or not rows_path.exists():
+        if matrix_path.exists() and rows_path.exists():
             self._index_matrix = np.load(matrix_path)
             raw_rows = json.loads(rows_path.read_text(encoding="utf-8"))
-                        self._index_rows = [
+            self._index_rows = [
                 TrainRow(
                     question=row["question"],
                     options=row["options"],
@@ -153,7 +159,8 @@ class RagRuntime:
                 )
                 for row in raw_rows
             ]
-            return 
+            return
+
         train_rows = load_train_rows(Path("data/train.csv"))
         self._index_rows = train_rows
         self._index_matrix = None
@@ -248,9 +255,11 @@ class RagRuntime:
         raw = (response.choices[0].message.content or "").strip().upper()
         if raw and raw[0] in ("A", "B", "C", "D"):
             return raw[0]
+
         for letter in ("A", "B", "C", "D"):
             if letter in raw:
                 return letter
+
         return "A"
 
 
@@ -310,3 +319,7 @@ class RagRuntime:
         """Backward compat: infer from formatted query string."""
         parsed = parse_query(query)
         return self.infer_mcq(parsed.question, parsed.options)
+
+
+# Backward compatibility for modules that still import RagRuntime.
+RagRuntime = RAGRuntime

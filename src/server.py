@@ -1,7 +1,10 @@
 from __future__ import annotations
-from contextlib import contextmanager
+
+from contextlib import asynccontextmanager
 from typing import Literal, cast
+
 from fastapi import FastAPI
+
 from src.api_models import AgentRequest, AgentResponse
 from src.rag_service import RAGRuntime
 from src.settings import load_settings
@@ -22,14 +25,24 @@ app = FastAPI(title="RAG Agent System", lifespan=lifespan)
 async def health_check():
     return {"status": "healthy"}
 
-@app.post("/infernce", response_model=AgentResponse)
-def inference(request: AgentRequest) -> AgentResponse:
+
+def _get_runtime() -> RAGRuntime:
+    global _runtime
     if _runtime is None:
         settings = load_settings()
-        runtime = RagRuntime(settings)
-        runtime.load_index()
-        answer = _runtime.infer(request.query)
-        return AgentResponse(answer=cast(Literal["A", "B", "C", "D"], answer))
-    
-    answer = _runtime.infer(request.query)
+        _runtime = RAGRuntime(settings)
+        _runtime.load_index()
+    return _runtime
+
+
+@app.post("/inference", response_model=AgentResponse)
+def inference(request: AgentRequest) -> AgentResponse:
+    runtime = _get_runtime()
+    answer = runtime.infer(request.query)
     return AgentResponse(answer=cast(Literal["A", "B", "C", "D"], answer))
+
+
+# Keep legacy misspelled route for compatibility.
+@app.post("/infernce", response_model=AgentResponse)
+def inference_legacy(request: AgentRequest) -> AgentResponse:
+    return inference(request)

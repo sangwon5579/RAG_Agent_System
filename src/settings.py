@@ -16,6 +16,7 @@ class Settings:
 
 # 설정 객체 생성 후 반환
 def load_settings() -> Settings:
+    load_dotenv()
     key = os.getenv("OPENAI_API_KEY")
     timeout_raw = os.getenv("OPENAI_TIMEOUT_SECONDS", "8")
     try:

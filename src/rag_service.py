@@ -229,7 +229,9 @@ class RAGRuntime:
         # 최종 유저 프롬프트
         prompt = (
             f"{context_block}"
-            f"다음 문제의 정답을 선택하세요.\n\n"
+            f"다음 객관식 문제의 정답을 고르세요.\n"
+            f"문장에 '옳지 않은 것', '아닌 것', '틀린 것', '예외' 표현이 있으면 해당 조건을 반영하세요.\n"
+            f"반드시 A, B, C, D 중 한 글자만 출력하세요.\n\n"
             f"문제: {parsed.question}\n"
             f"A: {parsed.options.get('A', '')}\n"
             f"B: {parsed.options.get('B', '')}\n"
@@ -247,7 +249,12 @@ class RAGRuntime:
             messages=[
                 {
                     "role": "system",
-                    "content": "한국 형사법 및 법률 전문가. A, B, C, D 중 정답 알파벳 하나만 출력.",
+                    "content": (
+                        "한국 법률 객관식 문제를 푸는 전문가다. "
+                        "반드시 A, B, C, D 중 하나의 알파벳 한 글자만 출력하라. "
+                        "설명, 근거, 문장, 기호, 공백을 추가하지 마라. "
+                        "문제에 옳지 않은/아닌/틀린/예외를 묻는 표현이 있으면 해당 조건을 반영해 선택하라."
+                    ),
                 },
                 {"role": "user", "content": prompt},
             ],

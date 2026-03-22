@@ -307,20 +307,41 @@ class RAGRuntime:
         )
 
         # 유사도 임계값 이상인 경우에만 컨텍스트 포함 (selective RAG)
+        high_quality_pairs: list[tuple[TrainRow, float]] = []
         if self._index_matrix is not None and self._index_rows:
             retrieved_rows, sims = self._retrieve_with_scores(
                 query_embedding, self.settings.top_k
             )
             threshold = self.settings.retrieval_sim_threshold
-            high_quality = [
-                row
+            high_quality_pairs = [
+                (row, s)
                 for row, s in zip(retrieved_rows, sims, strict=False)
                 if s >= threshold
             ]
-        else:
-            high_quality = []
 
-        return self._llm_choose(parsed, high_quality[:3])
+        high_quality = [row for row, _ in high_quality_pairs]
+        llm_answer = self._llm_choose(parsed, high_quality[:3])
+
+        if not high_quality_pairs:
+            return llm_answer
+
+        vote_scores = {"A": 0.0, "B": 0.0, "C": 0.0, "D": 0.0}
+        for row, sim in high_quality_pairs:
+            # 고유사 이웃의 영향력을 키우기 위해 제곱 가중치를 사용
+            w = max(sim, 0.0) ** 2
+            vote_scores[row.answer] += w
+
+        ranked = sorted(vote_scores.items(), key=lambda item: item[1], reverse=True)
+        knn_answer, top_score = ranked[0]
+        second_score = ranked[1][1]
+        top1_sim = max(sim for _, sim in high_quality_pairs)
+        margin = top_score - second_score
+
+        # 검색 신뢰도가 충분히 높을 때만 KNN이 LLM 답을 덮어쓴다.
+        if top1_sim >= 0.86 and margin >= 0.08:
+            return knn_answer
+
+        return llm_answer
 
     def infer(self, query: str) -> str:
         """Backward compat: infer from formatted query string."""
